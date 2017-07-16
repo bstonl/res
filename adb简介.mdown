@@ -1,0 +1,115 @@
+# 概念
+[谷歌官方介绍](https://developer.android.com/studio/command-line/adb.html/)
+> 简单说来，adb是一个通用命令行工具，通过adb我们可以对手机(或模拟器)进行一些操作，比如调试程序、安装应用、执行shell。adb本身并没有实现上述这些功能，它只是提供了一种访问设备的接口，正如其名bridge。
+
+# 原理模型
+## 从一行命令说起
+假定你的手机通过USB与电脑连接，且已经允许USB debug，如下分析过程忽略认证过程。
+> 在电脑终端敲一行命令
+
+```
+adb devices
+```
+> 此时电脑终端会输出如下：
+
+```
+List of devices attached
+device_ip_address:5555 device
+```
+
+以上过程可以分为pc与手机两端。
+> 电脑端
+
+```
+当我们敲adb命令的时候，如果电脑端还没有adb server进程，电脑会首先启动adb server进程，当我们在终端敲下命令后，
+adb server会收到将命令包装后的字符串，然后将字符串通过USB协议发送到手机。
+```
+> 手机端
+
+
+```
+手机在启动的时候会启动一个adbd的守护进程，当它接收到PC端下发的adb命令后,首先解析字符串，然后根据解析到的命令进入到对应的处理逻辑。
+```
+## 模型图
+
+![adb原理模型](https://github.com/bstonl/res/blob/master/adb_principle_model.png)
+
+## Wifi模式
+上面默认时USB模式，所有adb协议相关的数据通过USB传输，有时候我们想同时调试多个手机、或者不想每次连接USB，就可以开启无线模式。
+
+> 打开无线模式
+
+```
+在USB模式下，在终端输入如下命令：
+adb tcpip 5055 //5055是个端口号，理论上可以任意设置到为未开的端口号
+
+打开手机adb端口后，接下来需要确保手机与电脑处于同一网段；
+然后拔掉USB线，继续在PC端敲一下命令：
+adb connect mobile_ip:5055 // 手机ip:端口号
+adb devices //如果连接列表中包含你的手机序列号，代表无线连接成功。
+```
+> Wifi模式原理
+
+
+```
+通过阅读android源码可知，当设备通过USB连接到pc端，
+此时如果打开了wifi模式，直接在终端输入adb命令会提示有多个设备连接，
+需要指定设备。通过“adb -s  序列号/ip:port” 选择具体的连接方式。
+
+其实现流程如下：pc端console作为client与pc端adb server建立连接，
+console将输入命令通过console_socket发送到adb server_socket，
+adb server_socket根据命令的 -s参数值选择连接的手机A。
+
+手机端的adbd有一个device_server_socket，
+通过pc端的adb connect ip:port建立socket连接(设定为pc_client_socket)。
+
+根据手机A找到对应的pc_client_socket，
+将包装后的字符串命令发送到device_server_socket，
+adbd接收到命令之后，利用自己特有的权限执行各种命令工具。
+```
+
+
+
+# 使用
+## 开启debug模式
+> adb功能在正常情况下是隐藏的，需要手动开启。[参见谷歌官方介绍](https://developer.android.com/studio/command-line/adb.html/)，“在您的设备上启用 adb 调试”部分。
+## 常用命令
+
+> 想查看adb支持的命令很简单：
+> 在PC端命令行输入：
+> adb dd ，对于adb不能解析的命令，它会在终端输出能支持的所有命令及简介。
+
+```
+安装apk
+adb install -r  xx.apk  
+根据包名卸载
+adb uninstall com.xx.packagename 
+打开shell
+adb shell 
+开启adb wifi模式，打开指定端口
+adb tcpip 5037 
+端口转发
+adb forward tcpip  
+终端启动logcat
+adb logcat  
+将pc端文件推到手机指定目录，比如data/local/tmp 或者sdcard
+adb push pc_path/srourcefile device_path2/targetfile  
+拉取设备文件到pc
+adb pull device_path/file ./  
+monkey测试指定包
+adb shell -p com.xx.packagename monkeytimes  
+根据pid强杀进程
+adb shell kill -9 pid  
+通过instrument启动制定类名、方法测试
+adb shell am instrument -e class classname -w fullpackegename/fullrunnername 
+单点点击事件模拟
+adb shell input tap pointX pointY  
+滑动触摸模拟
+adb shell input swipe p1X p1Y  p2X p2Y   
+录屏生成mp4文件
+adb screenrecord path/record.mp4   
+获取系统的一些属性
+adb shell getprop | grep xxx  
+
+```
+
